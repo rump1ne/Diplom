@@ -11,6 +11,7 @@ import { p2pRouter } from './modules/p2p';
 import { promoRouter } from './modules/promo';
 import { gachaRouter } from './modules/gacha';
 import { adminRouter } from './modules/admin';
+import { registrationRouter } from './modules/registration';
 
 export const createApp = () => {
   const app = express();
@@ -51,6 +52,7 @@ export const createApp = () => {
   app.use('/api/promo', promoRouter);
   app.use('/api/gacha', gachaRouter);
   app.use('/api/admin', adminRouter);
+  app.use('/api/registration', registrationRouter);
 
   const frontendDistPath = path.resolve(__dirname, '../../frontend/dist');
   if (fs.existsSync(frontendDistPath)) {
@@ -59,12 +61,6 @@ export const createApp = () => {
       res.sendFile(path.join(frontendDistPath, 'index.html'));
     });
   }
-
-  // Глобальный обработчик ошибок — логирует все 500-е
-app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error('[ERROR]', err.message, err.stack);
-  res.status(500).json({ error: 'Internal server error' });
-});
 
   return app;
 };

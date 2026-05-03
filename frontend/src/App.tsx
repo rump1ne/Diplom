@@ -7,6 +7,7 @@ import { QuestsPage } from './pages/QuestsPage';
 import { GachaPage } from './pages/GachaPage';
 import { AdminPage } from './pages/AdminPage';
 import { AuthPage } from './pages/AuthPage';
+import { RegisterPage } from './pages/RegisterPage';
 import { useAuth } from './auth/AuthContext';
 
 const RequireAuth: React.FC<{ children: React.ReactElement }> = ({ children }) => {
@@ -109,6 +110,7 @@ export const App: React.FC = () => {
         <main className="main-content">
           <Routes>
             <Route path="/auth" element={<AuthPage />} />
+            <Route path="/register" element={<RegisterPage />} />
             <Route
               path="/"
               element={

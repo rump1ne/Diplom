@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 
 export const AuthPage: React.FC = () => {
@@ -36,6 +36,8 @@ export const AuthPage: React.FC = () => {
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          required
+          disabled={loading}
         />
         <input
           className="input"
@@ -43,6 +45,8 @@ export const AuthPage: React.FC = () => {
           placeholder="Пароль"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          required
+          disabled={loading}
         />
         {error && (
           <div className="card-meta" style={{ color: '#ff5252' }}>
@@ -52,8 +56,13 @@ export const AuthPage: React.FC = () => {
         <button className="primary-button" type="submit" disabled={loading}>
           {loading ? 'Вход...' : 'Войти'}
         </button>
+
+        <div style={{ textAlign: 'center', marginTop: 4 }}>
+          <Link to="/register" className="card-meta" style={{ color: 'inherit' }}>
+            Нет аккаунта? Подать заявку на регистрацию
+          </Link>
+        </div>
       </form>
     </div>
   );
 };
-
