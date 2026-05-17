@@ -28,6 +28,18 @@ interface RegistrationRequest {
   created_at: string;
 }
 
+interface ShopItem {
+  id: number;
+  name: string;
+  description: string | null;
+  price: number;
+  kind: 'PRIVILEGE' | 'MERCH';
+  rarity: 'COMMON' | 'RARE' | 'EPIC' | 'LEGENDARY';
+  image_url: string | null;
+  duration_days: number | null;
+  stock: number | null;
+}
+
 export const AdminPage: React.FC = () => {
   const { token } = useAuth();
 
@@ -54,6 +66,22 @@ export const AdminPage: React.FC = () => {
 
   const [filterUserId, setFilterUserId] = useState('');
   const [filterType, setFilterType] = useState('');
+
+  // Состояние для управления товарами
+  const [shopItems, setShopItems] = useState<ShopItem[]>([]);
+  const [shopLoading, setShopLoading] = useState(true);
+  const [shopError, setShopError] = useState<string | null>(null);
+  const [editingItem, setEditingItem] = useState<ShopItem | null>(null);
+  const [newItem, setNewItem] = useState({
+    name: '',
+    description: '',
+    price: '',
+    kind: 'PRIVILEGE' as 'PRIVILEGE' | 'MERCH',
+    rarity: 'COMMON' as 'COMMON' | 'RARE' | 'EPIC' | 'LEGENDARY',
+    image_url: '',
+    duration_days: '',
+    stock: ''
+  });
 
   const setMsg = (text: string, ok = false) => {
     setAdminMessage(text);
@@ -111,11 +139,26 @@ export const AdminPage: React.FC = () => {
     }
   }, [token, filterUserId, filterType]);
 
+  const loadShopItems = useCallback(async () => {
+    if (!token) return;
+    setShopLoading(true);
+    setShopError(null);
+    try {
+      const data = await apiFetch<{ items: ShopItem[] }>('/api/shop/items', {}, token);
+      setShopItems(data.items);
+    } catch (e) {
+      setShopError(e instanceof Error ? e.message : 'Не удалось загрузить товары');
+    } finally {
+      setShopLoading(false);
+    }
+  }, [token]);
+
   useEffect(() => {
     loadRegRequests();
     loadSubmissions();
     loadTransactions();
-  }, [loadRegRequests, loadSubmissions, loadTransactions]);
+    loadShopItems();
+  }, [loadRegRequests, loadSubmissions, loadTransactions, loadShopItems]);
 
   const handleApproveReg = async (id: number) => {
     if (!token) return;
@@ -198,6 +241,72 @@ export const AdminPage: React.FC = () => {
       await loadSubmissions();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'Ошибка при отклонении');
+    }
+  };
+
+  const handleCreateItem = async () => {
+    if (!token) return;
+    setAdminMessage(null);
+    
+    if (!newItem.name || !newItem.price) {
+      setMsg('Укажите название и цену товара');
+      return;
+    }
+
+    try {
+      await apiFetch('/api/shop/items', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: newItem.name,
+          description: newItem.description || null,
+          price_coins: Number(newItem.price),
+          type: newItem.kind,
+          rarity: newItem.rarity,
+          image_url: newItem.image_url || null,
+          duration_days: newItem.duration_days ? Number(newItem.duration_days) : null,
+          stock: newItem.stock ? Number(newItem.stock) : null
+        })
+      }, token);
+      setMsg('Товар создан', true);
+      setNewItem({
+        name: '',
+        description: '',
+        price: '',
+        kind: 'PRIVILEGE',
+        rarity: 'COMMON',
+        image_url: '',
+        duration_days: '',
+        stock: ''
+      });
+      await loadShopItems();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'Ошибка при создании товара');
+    }
+  };
+
+  const handleUpdateItem = async (item: ShopItem) => {
+    if (!token) return;
+    setAdminMessage(null);
+    
+    try {
+      await apiFetch(`/api/shop/items/${item.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          name: item.name,
+          description: item.description,
+          price_coins: item.price,
+          type: item.kind,
+          rarity: item.rarity,
+          image_url: item.image_url,
+          duration_days: item.duration_days,
+          stock: item.stock
+        })
+      }, token);
+      setMsg('Товар обновлён', true);
+      setEditingItem(null);
+      await loadShopItems();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'Ошибка при обновлении товара');
     }
   };
 
@@ -322,6 +431,180 @@ export const AdminPage: React.FC = () => {
           </div>
         </section>
       </div>
+
+      {/* ── Управление товарами магазина ── */}
+      <section className="card" style={{ marginBottom: 24 }}>
+        <div className="card-title">Управление товарами магазина</div>
+        <div className="card-meta">Добавление, редактирование и просмотр товаров.</div>
+
+        {/* Форма создания нового товара */}
+        <div className="card" style={{ marginTop: 12, background: 'var(--color-bg-elevated)' }}>
+          <div className="card-title" style={{ fontSize: 16 }}>Добавить новый товар</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+            <input
+              className="input"
+              placeholder="Название товара"
+              value={newItem.name}
+              onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
+            />
+            <textarea
+              className="input"
+              placeholder="Описание (необязательно)"
+              value={newItem.description}
+              onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
+              rows={3}
+            />
+            <input
+              className="input"
+              type="number"
+              placeholder="Цена в KK"
+              value={newItem.price}
+              onChange={(e) => setNewItem({ ...newItem, price: e.target.value })}
+            />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <select
+                className="input"
+                value={newItem.kind}
+                onChange={(e) => setNewItem({ ...newItem, kind: e.target.value as 'PRIVILEGE' | 'MERCH' })}
+              >
+                <option value="PRIVILEGE">Привилегия</option>
+                <option value="MERCH">Мерч</option>
+              </select>
+              <select
+                className="input"
+                value={newItem.rarity}
+                onChange={(e) => setNewItem({ ...newItem, rarity: e.target.value as any })}
+              >
+                <option value="COMMON">Обычный</option>
+                <option value="RARE">Редкий</option>
+                <option value="EPIC">Эпический</option>
+                <option value="LEGENDARY">Легендарный</option>
+              </select>
+            </div>
+            <input
+              className="input"
+              placeholder="URL изображения (необязательно)"
+              value={newItem.image_url}
+              onChange={(e) => setNewItem({ ...newItem, image_url: e.target.value })}
+            />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <input
+                className="input"
+                type="number"
+                placeholder="Длительность (дней)"
+                value={newItem.duration_days}
+                onChange={(e) => setNewItem({ ...newItem, duration_days: e.target.value })}
+              />
+              <input
+                className="input"
+                type="number"
+                placeholder="Остаток (необязательно)"
+                value={newItem.stock}
+                onChange={(e) => setNewItem({ ...newItem, stock: e.target.value })}
+              />
+            </div>
+            <button className="primary-button" onClick={handleCreateItem}>
+              Создать товар
+            </button>
+          </div>
+        </div>
+
+        {/* Список товаров */}
+        {shopLoading && <div className="card-meta" style={{ marginTop: 12 }}>Загрузка...</div>}
+        {shopError && <div className="card-meta" style={{ color: '#ff5252', marginTop: 12 }}>{shopError}</div>}
+        
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+          {shopItems.map((item) => (
+            <div key={item.id} className="card" style={{ background: 'var(--color-bg-elevated)' }}>
+              {editingItem?.id === item.id ? (
+                // Режим редактирования
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <input
+                    className="input"
+                    value={editingItem.name}
+                    onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
+                  />
+                  <textarea
+                    className="input"
+                    value={editingItem.description || ''}
+                    onChange={(e) => setEditingItem({ ...editingItem, description: e.target.value })}
+                    rows={2}
+                  />
+                  <input
+                    className="input"
+                    type="number"
+                    value={editingItem.price}
+                    onChange={(e) => setEditingItem({ ...editingItem, price: Number(e.target.value) })}
+                  />
+                  <input
+                    className="input"
+                    placeholder="URL изображения"
+                    value={editingItem.image_url || ''}
+                    onChange={(e) => setEditingItem({ ...editingItem, image_url: e.target.value })}
+                  />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <input
+                      className="input"
+                      type="number"
+                      placeholder="Длительность (дней)"
+                      value={editingItem.duration_days || ''}
+                      onChange={(e) => setEditingItem({ ...editingItem, duration_days: e.target.value ? Number(e.target.value) : null })}
+                    />
+                    <input
+                      className="input"
+                      type="number"
+                      placeholder="Остаток"
+                      value={editingItem.stock || ''}
+                      onChange={(e) => setEditingItem({ ...editingItem, stock: e.target.value ? Number(e.target.value) : null })}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="primary-button" onClick={() => handleUpdateItem(editingItem)}>
+                      Сохранить
+                    </button>
+                    <button className="primary-button-outline" onClick={() => setEditingItem(null)}>
+                      Отмена
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                // Режим просмотра
+                <>
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                    {item.image_url && (
+                      <img
+                        src={item.image_url}
+                        alt={item.name}
+                        style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 8 }}
+                      />
+                    )}
+                    <div style={{ flex: 1 }}>
+                      <div className="card-title" style={{ fontSize: 16 }}>{item.name}</div>
+                      <div className="card-meta">{item.description}</div>
+                      <div className="card-meta" style={{ marginTop: 4 }}>
+                        <span style={{ fontWeight: 600 }}>{item.price} KK</span> • {item.kind === 'PRIVILEGE' ? 'Привилегия' : 'Мерч'} • {item.rarity}
+                      </div>
+                      {item.duration_days && (
+                        <div className="card-meta">Длительность: {item.duration_days} дней</div>
+                      )}
+                      {item.stock !== null && (
+                        <div className="card-meta">Остаток: {item.stock}</div>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    className="primary-button-outline"
+                    style={{ marginTop: 8 }}
+                    onClick={() => setEditingItem(item)}
+                  >
+                    Редактировать
+                  </button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
 
       {/* ── История транзакций ── */}
       <section className="card">

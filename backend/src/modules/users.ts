@@ -68,24 +68,114 @@ usersRouter.get('/me/inventory', async (req: AuthRequest, res) => {
     id: number;
     status: string;
     acquired_at: string;
+    activated_at: string | null;
+    expires_at: string | null;
     name: string;
     description: string;
     type: string;
+    image_url: string | null;
+    rarity: string | null;
   }>(
     `SELECT ii.id,
             ii.status,
             ii.acquired_at,
+            ii.activated_at,
+            ii.expires_at,
             si.name,
             si.description,
-            si.type
+            si.type,
+            si.image_url,
+            si.rarity
      FROM inventory_items ii
      JOIN shop_items si ON si.id = ii.shop_item_id
-     WHERE ii.user_id = $1 AND ii.status = 'OWNED'
-     ORDER BY ii.acquired_at DESC`,
+     WHERE ii.user_id = $1
+       AND (ii.status = 'OWNED' OR ii.status = 'ACTIVATED')
+       AND (ii.expires_at IS NULL OR ii.expires_at > now())
+     ORDER BY ii.status DESC, ii.acquired_at DESC`,
     [userId]
   );
 
   res.json({ items: rows });
+});
+
+// ─────────────────────────────────────────────
+// POST /api/users/me/inventory/:id/activate
+// Активация предмета (PRIVILEGE)
+// ─────────────────────────────────────────────
+
+usersRouter.post('/me/inventory/:id/activate', async (req: AuthRequest, res) => {
+  const userId = req.userId;
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const itemId = Number(req.params.id);
+  if (Number.isNaN(itemId)) {
+    return res.status(400).json({ error: 'Invalid item id' });
+  }
+
+  try {
+    // Проверяем что предмет принадлежит пользователю и не активирован
+    const { rows: invRows } = await query<{
+      id: number;
+      status: string;
+      shop_item_id: number;
+    }>(
+      `SELECT id, status, shop_item_id
+       FROM inventory_items
+       WHERE id = $1 AND user_id = $2`,
+      [itemId, userId]
+    );
+
+    const item = invRows[0];
+    if (!item) {
+      return res.status(404).json({ error: 'Предмет не найден' });
+    }
+    if (item.status !== 'OWNED') {
+      return res.status(400).json({ error: 'Предмет уже активирован или истёк' });
+    }
+
+    // Получаем duration_days товара
+    const { rows: shopRows } = await query<{
+      type: string;
+      duration_days: number | null;
+    }>(
+      'SELECT type, duration_days FROM shop_items WHERE id = $1',
+      [item.shop_item_id]
+    );
+
+    const shopItem = shopRows[0];
+    if (!shopItem) {
+      return res.status(404).json({ error: 'Товар не найден' });
+    }
+
+    // Мерч нельзя активировать
+    if (shopItem.type === 'MERCH') {
+      return res.status(400).json({ error: 'Мерч нельзя активировать — это физический предмет' });
+    }
+
+    // Вычисляем expires_at
+    const expiresAt = shopItem.duration_days
+      ? new Date(Date.now() + shopItem.duration_days * 24 * 60 * 60 * 1000)
+      : null;
+
+    await query(
+      `UPDATE inventory_items
+       SET status = 'ACTIVATED',
+           activated_at = now(),
+           expires_at = $2
+       WHERE id = $1`,
+      [itemId, expiresAt]
+    );
+
+    res.json({
+      success: true,
+      expiresAt: expiresAt ? expiresAt.toISOString() : null
+    });
+  } catch (e) {
+    console.error('[ACTIVATE ITEM ERROR]', e);
+    res.status(500).json({ error: 'Ошибка при активации предмета' });
+  }
 });
 
 const promoSchema = z.object({
@@ -110,4 +200,3 @@ usersRouter.post('/me/promo', async (req: AuthRequest, res) => {
     res.status(400).json({ error: message });
   }
 });
-
